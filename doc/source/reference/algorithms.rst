@@ -21,6 +21,7 @@ Algorithms
    algorithms.community
    algorithms.component
    algorithms.connectivity
+   algorithms.connectivity.approximation
    algorithms.core
    algorithms.cycles
    algorithms.dag
