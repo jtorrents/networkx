@@ -1,14 +1,25 @@
 SparseGraph6 
 ============
-.. automodule:: networkx.readwrite.sparsegraph6
+
+Graph6
+------
+.. automodule:: networkx.readwrite.graph6
 .. autosummary::
    :toctree: generated/
 
-   read_graph6
    parse_graph6
-   read_graph6_list
-   read_sparse6
-   parse_sparse6
-   read_sparse6_list
+   read_graph6
+   generate_graph6
+   write_graph6
 
+Sparse6
+-------
+.. automodule:: networkx.readwrite.sparse6
+.. autosummary::
+   :toctree: generated/
+
+   parse_sparse6
+   read_sparse6
+   generate_sparse6
+   write_sparse6
 

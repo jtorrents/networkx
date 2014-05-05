@@ -43,6 +43,7 @@ Algorithms
    algorithms.simple_paths
    algorithms.swap
    algorithms.traversal
+   algorithms.tree
    algorithms.vitality
 
 

@@ -5,8 +5,7 @@ Kanevsky all minimum k cutsets
 from operator import itemgetter
 from copy import deepcopy
 import networkx as nx
-from networkx.algorithms.connectivity.connectivity import \
-    _aux_digraph_node_connectivity, node_connectivity
+from .utils import build_auxiliary_node_connectivity
 
 __author__ = '\n'.join(['Jordi Torrents <jtorrents@milnou.net>'])
 
@@ -87,7 +86,7 @@ def k_cutsets(F, k=None):
     all_cuts = set()
     # step 1: Find node connectivity k of G
     if k is None:
-        k = node_connectivity(G)
+        k = nx.node_connectivity(G)
     # step 2: 
     # Find k nodes with top degree, call it X:
     X = frozenset(n for n,deg in \
@@ -102,14 +101,18 @@ def k_cutsets(F, k=None):
         for v in set(G) - set(X):
             if v in G[x]: continue
             # Even-Tarjan reduction
-            R, mapping = _aux_digraph_node_connectivity(G)
+            R = build_auxiliary_node_connectivity(G)
+            mapping = R.graph['mapping']
             # step 4: compute maximum flow in an Even-Tarjan reduction R of G
             # and step:5 the associated residual network H
             #flow, H = nx.ford_fulkerson(R, '%sB'%mapping[x], '%sA'%mapping[v],
             #                                capacity="capacity", residual=True)
-            flow, H = nx.ford_fulkerson_flow_and_auxiliary(R, '%sB'%mapping[x], 
-                                                            '%sA'%mapping[v],
-                                                            capacity="capacity")
+            H = nx.edmonds_karp(R, '%sB'%mapping[x], '%sA'%mapping[v], 
+                                capacity="capacity")
+            H.remove_edges_from([(u, v) for u, v, d in H.edges(data=True)
+                                if d['capacity'] == d['flow']])
+            flow = H.graph['flow_value']
+
             if flow == k:
                 # step 6: shrink the strongly connected components of 
                 # residual flow network H and call it L
@@ -216,6 +219,7 @@ def my_condensation(G, scc, mapping=False):
     """
     mapping = {}
     C = nx.DiGraph()
+    scc = list(scc)
     for i,component in enumerate(scc):
         for n in component:
             mapping[n] = i
