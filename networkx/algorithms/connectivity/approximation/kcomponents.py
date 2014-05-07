@@ -202,7 +202,7 @@ def k_components(G, average=True,
                     K = node_connectivity(SG, u, v)
                     nip[(u,v)] = K
                 elif not exact:
-                    K = node_connectivity(SG, u, v, max_paths=k)
+                    K = node_connectivity(SG, u, v, cutoff=k)
                 else:
                     K = node_connectivity(SG, u, v)
                 if k > K:

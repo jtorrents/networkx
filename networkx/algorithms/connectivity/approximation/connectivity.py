@@ -16,7 +16,7 @@ __all__ = ['node_independent_paths',
            'single_source_node_connectivity',
            'all_pairs_node_connectivity']
 
-def node_independent_paths(G, source, target, max_paths=None):
+def node_independent_paths(G, source, target, cutoff=None):
     """Return node independent paths between two nodes
 
     Node independent paths or disjoint node paths are paths between two nodes
@@ -38,7 +38,7 @@ def node_independent_paths(G, source, target, max_paths=None):
     target : node
        Ending node for node independent paths
 
-    max_paths : integer (optional)
+    cutoff : integer (optional)
         Maximum number of paths to consider
 
     Returns
@@ -85,8 +85,8 @@ def node_independent_paths(G, source, target, max_paths=None):
     else:
         possible = min(G.degree(source), G.degree(target))
     
-    if max_paths is None:
-        max_paths = float('inf')
+    if cutoff is None:
+        cutoff = float('inf')
 
     paths=[]
     
@@ -96,7 +96,7 @@ def node_independent_paths(G, source, target, max_paths=None):
         return []
     
     exclude = set()
-    for i in range(min(possible, max_paths)):
+    for i in range(min(possible, cutoff)):
         try:
             path = bidirectional_shortest_path(G, source, target, exclude)
             exclude.update(set(path))
@@ -106,7 +106,7 @@ def node_independent_paths(G, source, target, max_paths=None):
 
     return paths
 
-def local_node_connectivity(G, source, target, max_paths=None, strict=False):
+def local_node_connectivity(G, source, target, cutoff=None, strict=False):
     """Compute node connectivity between source and target.
     
     Pairwise or local node connectivity between two distinct and nonadjacent 
@@ -133,7 +133,7 @@ def local_node_connectivity(G, source, target, max_paths=None, strict=False):
     target : node
         Ending node for node connectivity
 
-    max_paths : integer (optional)
+    cutoff : integer, float (optional)
         Maximum number of paths to consider
 
     strict : bolean (default=False)
@@ -182,8 +182,8 @@ def local_node_connectivity(G, source, target, max_paths=None, strict=False):
     else:
         possible = min(G.degree(source), G.degree(target))
     
-    if max_paths is None:
-        max_paths = float('Inf')
+    if cutoff is None:
+        cutoff = float('Inf')
 
     K = 0
     
@@ -195,7 +195,7 @@ def local_node_connectivity(G, source, target, max_paths=None, strict=False):
         return float('nan')
     
     exclude = set()
-    for i in range(min(possible, max_paths)):
+    for i in range(min(possible, cutoff)):
         try:
             path = bidirectional_shortest_path(G,source,target,exclude=exclude)
             exclude.update(set(path))
@@ -270,22 +270,23 @@ def node_connectivity(G):
         iter_func = itertools.combinations
         neighbors=G.neighbors_iter
 
-    K = G.order()-1
     # Choose a node with minimum degree
     deg = G.degree()
-    min_deg = min(deg.values())
-    v = next(n for n,d in deg.items() if d==min_deg)
+    minimum_degree = min(deg.values())
+    v = next(n for n,d in deg.items() if d==minimum_degree)
+    # Node connectivity is bounded by minimum degree
+    K = minimum_degree
     # compute local node connectivity with all non-neighbors nodes
     # and store the minimum
     for w in set(G)-set(neighbors(v))-set([v]):
-        K = min(K, local_node_connectivity(G, v, w))
+        K = min(K, local_node_connectivity(G, v, w, cutoff=K))
     # Same for non adjacent pairs of neighbors of v
     for x,y in iter_func(neighbors(v), 2):
             if y not in G[x]:
-                K = min(K, local_node_connectivity(G, x, y))
+                K = min(K, local_node_connectivity(G, x, y, cutoff=K))
     return K
 
-def single_source_node_connectivity(G, source, max_paths=None, strict=False):
+def single_source_node_connectivity(G, source, cutoff=None, strict=False):
     """Compute pairwise node connectivity between source
     and all other nodes reachable from source.
 
@@ -310,7 +311,7 @@ def single_source_node_connectivity(G, source, max_paths=None, strict=False):
     source : node
        Starting node for node independent paths
 
-    max_paths : integer (optional)
+    cutoff : integer (optional)
         Maximum number of paths to consider
 
     strict : bolean (default=False)
@@ -337,11 +338,11 @@ def single_source_node_connectivity(G, source, max_paths=None, strict=False):
     for target in G:
         if target == source: continue
         K[target] = local_node_connectivity(G, source, target, 
-                                                max_paths=max_paths, strict=strict)
+                                                cutoff=cutoff, strict=strict)
 
     return K
 
-def all_pairs_node_connectivity(G, max_paths=None, strict=False):
+def all_pairs_node_connectivity(G, cutoff=None, strict=False):
     """ Compute node connectivity between all pairs of nodes.
 
     Pairwise or local node connectivity between two distinct and nonadjacent 
@@ -362,7 +363,7 @@ def all_pairs_node_connectivity(G, max_paths=None, strict=False):
     ----------
     G : NetworkX graph
 
-    max_paths : integer (optional)
+    cutoff : integer (optional)
         Maximum number of paths to consider
 
     strict : bolean (default=False)
@@ -388,11 +389,11 @@ def all_pairs_node_connectivity(G, max_paths=None, strict=False):
     K = collections.defaultdict(dict)
     if G.is_directed():
         for n in G:
-            K[n] = single_source_node_connectivity(G, n, max_paths=max_paths,
+            K[n] = single_source_node_connectivity(G, n, cutoff=cutoff,
                                                     strict=strict)
     else:
         for u, v in itertools.combinations(G, 2):
-            this_k = local_node_connectivity(G, u, v, max_paths=max_paths,
+            this_k = local_node_connectivity(G, u, v, cutoff=cutoff,
                                                 strict=strict)
             K[u][v] = K[v][u] = this_k
 

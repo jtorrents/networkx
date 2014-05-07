@@ -58,10 +58,10 @@ class TestVertexConnectivityApprox:
                     if target in G[source]:
                         assert_true(math.isnan(k))
             
-    def test_max_paths(self):
+    def test_cutoff(self):
         for G in [self.K10, self.K5, self.K20]:
             for mp in [2,3,4]:
-                paths = approx.all_pairs_node_connectivity(G, max_paths=mp)
+                paths = approx.all_pairs_node_connectivity(G, cutoff=mp)
                 for source in paths:
                     for target, K in paths[source].items():
                         assert_true(K == mp)
