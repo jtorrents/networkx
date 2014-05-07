@@ -1,6 +1,6 @@
 """ Fast approximation for k-component structure
 """
-#    Copyright (C) 2013 by 
+#    Copyright (C) 2014 by 
 #    Jordi Torrents <jtorrents@milnou.net>
 #    All rights reserved.
 #    BSD license.
@@ -9,6 +9,10 @@ import collections
 
 import networkx as nx
 from networkx.algorithms.connectivity.approximation import local_node_connectivity
+from networkx.algorithms.connectivity import local_node_connectivity as exact_local_node_connectivity
+from networkx.algorithms.connectivity import build_auxiliary_node_connectivity
+from networkx.algorithms.flow.utils import build_residual_network
+
 from networkx.classes.antigraph import AntiGraph
 
 __author__ = """\n""".join(['Jordi Torrents <jtorrents@milnou.net>'])
@@ -56,10 +60,6 @@ def k_components(G, average=True,
     return_nip : Boolean (default=False)
         If True return also the dictionary with the local node connectivity
         among all pairs of nodes.
-
-    order : Integer (default=105)
-        Order below which we consider node independent paths among adjacent
-        nodes (see Notes below)
 
     min_density : Float (default=0.95)
         Density relaxation treshold.
@@ -148,7 +148,7 @@ def k_components(G, average=True,
     # k-component in which they are embedded
     k_number = dict.fromkeys(G, 0)
     # dict to store node independent paths
-    if store_nip: nip = {} 
+    if store_nip: nip = {}
     #################
     def _update_results(k, components, avg_k=None):
         avg = True if avg_k is not None else False
@@ -165,7 +165,7 @@ def k_components(G, average=True,
                     else: k_number[node] = k
     # make a few functions local for speed
     if exact:
-        node_connectivity = nx.local_node_connectivity
+        node_connectivity = exact_local_node_connectivity
     else:
         node_connectivity = local_node_connectivity
     k_core = nx.k_core
@@ -194,71 +194,37 @@ def k_components(G, average=True,
             if len(nodes) < k:
                 continue
             SG = G.subgraph(nodes)
+            if exact:
+                A = build_auxiliary_node_connectivity(SG)
+                R = build_residual_network(A, 'capacity')
+                kwargs = dict(auxiliary=A, residual=R)
+            else:
+                kwargs = dict()
             # Build auxiliary graph
             H = AntiGraph()
             H.add_nodes_from(SG.nodes_iter())
             for u,v in combinations(SG, 2):
                 if average and store_nip:
-                    K = node_connectivity(SG, u, v)
+                    K = node_connectivity(SG, u, v, **kwargs)
                     nip[(u,v)] = K
-                elif not exact:
-                    K = node_connectivity(SG, u, v, cutoff=k)
                 else:
-                    K = node_connectivity(SG, u, v)
+                    kwargs['cutoff'] = k
+                    K = node_connectivity(SG, u, v, **kwargs)
                 if k > K:
                     H.add_edge(u,v)
             for h_nodes in biconnected_components(H):
                 if len(h_nodes) <= k:
                     continue
-                HS = H.subgraph(h_nodes)
-                h_cnum = core_number(HS)
-                first = True
-                for c_value in sorted(set(h_cnum.values()),reverse=True):
-                    cands = set(n for n, cnum in h_cnum.items() if cnum == c_value)
-                    # Skip checking for overlap for the highest core value
-                    if first:
-                        overlap = False
-                        first = False
-                    else:
-                        overlap = set.intersection(*[
-                                    set(x for x in HS[n] if x not in cands) 
-                                    for n in cands])
-                    if overlap and len(overlap) < k:
-                        Hc = HS.subgraph(cands | overlap)
-                    else:
-                        Hc = HS.subgraph(cands)
-                    if len(Hc) <= k:
-                        continue
-                    hc_core = core_number(Hc)
-                    if _same(hc_core) and density(Hc) == 1.0:
-                        Gc = k_core(SG.subgraph(Hc), k)
-                    else:
-                        while Hc:
-                            Gc = k_core(SG.subgraph(Hc), k)
-                            Hc = HS.subgraph(Gc)
-                            if not Hc:
-                                continue
-                            hc_core = core_number(Hc)
-                            if _same(hc_core) and density(Hc) >= min_density:
-                                break
-                            hc_deg = Hc.degree()
-                            min_deg = min(hc_deg.values())
-                            remove = [n for n, d in hc_deg.items() if d == min_deg]
-                            Hc.remove_nodes_from(remove)
-                    if not Hc or len(Gc) <= k:
-                        continue
+                for Gc in cliques_heuristic(SG, H, h_nodes, k, min_density):
                     for k_component in biconnected_components(Gc):
-                        if len(k_component) <= k:
-                            continue
-                        Gk = k_core(SG.subgraph(k_component), k)
+                        Gk = nx.k_core(SG.subgraph(k_component), k)
                         if average:
                             num = 0.0
                             den = 0.0
-                            for u,v in combinations(Gk, 2):
+                            for u, v in combinations(Gk, 2):
                                 den += 1
                                 if store_nip:
-                                    num += (nip[(u,v)] if (u,v) in nip 
-                                            else nip[(v,u)])
+                                    num += nip.get((u, v), nip.get((v, u)))
                                 else:
                                     num += node_connectivity(Gk, u, v)
                             _update_results(k, [Gk.nodes()], (num/den))
@@ -268,9 +234,58 @@ def k_components(G, average=True,
         return k_components, k_number, nip
     return k_components, k_number
 
+
+def cliques_heuristic(SG, H, h_nodes, k, min_density):
+    HS = H.subgraph(h_nodes)
+    h_cnum = nx.core_number(HS)
+    for i, c_value in enumerate(sorted(set(h_cnum.values()),reverse=True)):
+        cands = set(n for n, cnum in h_cnum.items() if cnum == c_value)
+        # Skip checking for overlap for the highest core value
+        if i == 0:
+            overlap = False
+        else:
+            overlap = set.intersection(*[
+                        set(x for x in HS[n] if x not in cands)
+                        for n in cands])
+        if overlap and len(overlap) < k:
+            Hc = HS.subgraph(cands | overlap)
+        else:
+            Hc = HS.subgraph(cands)
+        hc_core = nx.core_number(Hc)
+        Gc = nx.k_core(SG.subgraph(Hc), k)
+        while not (_same(hc_core) and nx.density(Hc) >= min_density):
+            Hc = HS.subgraph(Gc)
+            if len(Hc) < k:
+                break
+            hc_core = nx.core_number(Hc)
+            hc_deg = Hc.degree()
+            min_deg = min(hc_deg.values())
+            remove = [n for n, d in hc_deg.items() if d == min_deg]
+            Hc.remove_nodes_from(remove)
+            Gc = nx.k_core(SG.subgraph(Hc), k)
+        if len(Gc) > k:
+            yield Gc
+
+
 def _same(measure, tol=0):
     vals = set(measure.values())
     if (max(vals) - min(vals)) <= tol:
         return True
     return False
+
+# Helper functions
+def _check_connectivity(G, G_k):
+    for k, components in G_k.items():
+        if k < 3:
+            continue
+        for (avg, component) in components:
+            C = G.subgraph(component)
+            K = nx.node_connectivity(C)
+            assert K >= k
+
+def print_connectivity(G_k):
+    for k, comps in G_k.items():
+        print("Connectivity {0}".format(k))
+        for (avg, comp) in comps:
+            print("    {0}-component ({1}): {2} nodes".format(k, avg, len(comp)))
 
