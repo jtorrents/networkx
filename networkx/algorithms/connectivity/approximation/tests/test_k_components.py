@@ -106,7 +106,8 @@ def torrents_and_ferraro_graph():
 
 # Helper function
 def _check_connectivity(G):
-    result, k_num = approx.k_components(G, average=False)
+    #result, k_num = approx.k_components(G, average=False)
+    result = approx.k_components(G)
     for k, components in result.items():
         if k < 3:
             continue
@@ -148,6 +149,7 @@ def test_karate_1():
                     19: 3, 20: 2, 21: 2, 22: 2, 23: 3, 24: 3, 25: 3, 26: 2, 27: 3,
                     28: 3, 29: 3, 30: 4, 31: 3, 32: 4, 33: 4}
     G = nx.karate_club_graph()
-    k_components, k_num = approx.k_components(G, average=False)
+    k_components = approx.k_components(G)
+    k_num = approx.build_k_number_dict(k_components)
     assert_equal(karate_k_num, k_num)
 
