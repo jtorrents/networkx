@@ -158,9 +158,15 @@ def k_components_average(G, exact=False, store_nip=True, min_density=0.95):
     # There is a linear time algorithm for triconnectivity, if we had an
     # implementation available we could start from k = 4.
     for component in  nx.connected_components(G):
-        k_components[1].append((1, set(component)))
+        # isolated nodes have connectivity 0
+        comp = set(component)
+        if len(comp) > 1:
+            k_components[1].append(comp)
     for bicomponent in  nx.biconnected_components(G):
-        k_components[2].append((2, set(bicomponent)))
+        # avoid considering dyads as bicomponents
+        bicomp = set(bicomponent)
+        if len(bicomp) > 2:
+            k_components[2].append(bicomp)
     # There is no k-component of k > maximum core number
     # \kappa(G) <= \lambda(G) <= \delta(G)
     g_cnum = core_number(G)
@@ -198,6 +204,8 @@ def k_components_average(G, exact=False, store_nip=True, min_density=0.95):
                 for Gc in cliques_heuristic(SG, H, h_nodes, k, min_density):
                     for k_component in biconnected_components(Gc):
                         Gk = nx.k_core(SG.subgraph(k_component), k)
+                        if len(Gk) <= k:
+                            continue
                         num = 0.0
                         den = 0.0
                         for u, v in combinations(Gk, 2):
@@ -326,12 +334,15 @@ def k_components(G, exact=False, min_density=0.95):
     # There is a linear time algorithm for triconnectivity, if we had an
     # implementation available we could start from k = 4.
     for component in  nx.connected_components(G):
-        k_components[1].append(set(component))
+        # isolated nodes have connectivity 0
+        comp = set(component)
+        if len(comp) > 1:
+            k_components[1].append(comp)
     for bicomponent in  nx.biconnected_components(G):
         # avoid considering dyads as bicomponents
         bicomp = set(bicomponent)
         if len(bicomp) > 2:
-            k_components[2].append(set(bicomponent))
+            k_components[2].append(bicomp)
     # There is no k-component of k > maximum core number
     # \kappa(G) <= \lambda(G) <= \delta(G)
     g_cnum = core_number(G)
@@ -365,6 +376,8 @@ def k_components(G, exact=False, min_density=0.95):
                 for Gc in cliques_heuristic(SG, H, h_nodes, k, min_density):
                     for k_component in biconnected_components(Gc):
                         Gk = nx.k_core(SG.subgraph(k_component), k)
+                        if len(Gk) <= k:
+                            continue
                         k_components[k].append(set(Gk))
     return k_components
 
