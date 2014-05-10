@@ -228,10 +228,10 @@ class AntiGraph(nx.Graph):
 
         """
         if nbunch is None:
-            nodes_nbrs = ((n,list(set(self.adj)-set(self.adj[n])-set([n])))
+            nodes_nbrs = ((n, set(self.adj)-set(self.adj[n])-set([n]))
                             for n in self.nodes_iter())
         else:
-            nodes_nbrs= ((n,list(set(self.nodes())-set(self.adj[n])-set([n])))
+            nodes_nbrs= ((n, set(self.nodes())-set(self.adj[n])-set([n]))
                             for n in self.nbunch_iter(nbunch))
 
         if weight is None:
