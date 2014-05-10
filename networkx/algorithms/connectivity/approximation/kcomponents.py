@@ -397,7 +397,7 @@ def cliques_heuristic(SG, H, h_nodes, k, min_density):
             remove = [n for n, d in hc_deg.items() if d == min_deg]
             Hc.remove_nodes_from(remove)
             Gc = nx.k_core(SG.subgraph(Hc), k)
-        if len(Gc) > k:
+        else:
             yield Gc
 
 
@@ -422,17 +422,21 @@ def _check_connectivity(G, G_k):
         if k < 3:
             continue
         for component in components:
-            if isinstance(tuple, component):
+            if isinstance(component, tuple):
                 component = component[1]
             C = G.subgraph(component)
             K = nx.node_connectivity(C)
-            assert K >= k
+            try:
+                assert K >= k
+            except:
+                msg = "error in {0}-components with {1} and node connectivity {2}"
+                print(msg.format(k, len(component), K))
 
 def print_connectivity(G_k):
     for k, comps in G_k.items():
         print("Connectivity {0}".format(k))
         for comp in comps:
-            if isinstance(tuple, component):
+            if isinstance(comp, tuple):
                 print("    {0}-component ({1}): {2} nodes".format(k, comp[0], len(comp[1])))
             else:
                 print("    {0}-component: {1} nodes".format(k, len(comp)))
