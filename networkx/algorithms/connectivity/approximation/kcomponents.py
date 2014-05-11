@@ -169,10 +169,10 @@ def k_components_average(G, exact=False, store_nip=True, min_density=0.95):
             k_components[2].append(bicomp)
     # There is no k-component of k > maximum core number
     # \kappa(G) <= \lambda(G) <= \delta(G)
-    g_cnum = core_number(G)
-    max_core = max(g_cnum.values())
+    g_cnumber = core_number(G)
+    max_core = max(g_cnumber.values())
     for k in range(3, max_core + 1):
-        C = k_core(G, k, core_number=g_cnum)
+        C = k_core(G, k, core_number=g_cnumber)
         for nodes in biconnected_components(C):
             # Build a subgraph SG induced by the nodes that are part of
             # each biconnected component of the k-core subgraph C.
@@ -201,9 +201,10 @@ def k_components_average(G, exact=False, store_nip=True, min_density=0.95):
             for h_nodes in biconnected_components(H):
                 if len(h_nodes) <= k:
                     continue
-                for Gc in cliques_heuristic(SG, H, h_nodes, k, min_density):
-                    for k_component in biconnected_components(Gc):
-                        Gk = nx.k_core(SG.subgraph(k_component), k)
+                SH = H.subgraph(h_nodes)
+                for Gc in cliques_heuristic(SG, SH, k, min_density):
+                    for k_nodes in biconnected_components(Gc):
+                        Gk = nx.k_core(SG.subgraph(k_nodes), k)
                         if len(Gk) <= k:
                             continue
                         num = 0.0
@@ -345,10 +346,10 @@ def k_components(G, exact=False, min_density=0.95):
             k_components[2].append(bicomp)
     # There is no k-component of k > maximum core number
     # \kappa(G) <= \lambda(G) <= \delta(G)
-    g_cnum = core_number(G)
-    max_core = max(g_cnum.values())
+    g_cnumber = core_number(G)
+    max_core = max(g_cnumber.values())
     for k in range(3, max_core + 1):
-        C = k_core(G, k, core_number=g_cnum)
+        C = k_core(G, k, core_number=g_cnumber)
         for nodes in biconnected_components(C):
             # Build a subgraph SG induced by the nodes that are part of
             # each biconnected component of the k-core subgraph C.
@@ -373,45 +374,44 @@ def k_components(G, exact=False, min_density=0.95):
             for h_nodes in biconnected_components(H):
                 if len(h_nodes) <= k:
                     continue
-                for Gc in cliques_heuristic(SG, H, h_nodes, k, min_density):
-                    for k_component in biconnected_components(Gc):
-                        Gk = nx.k_core(SG.subgraph(k_component), k)
+                SH = H.subgraph(h_nodes)
+                for Gc in cliques_heuristic(SG, SH, k, min_density):
+                    for k_nodes in biconnected_components(Gc):
+                        Gk = nx.k_core(SG.subgraph(k_nodes), k)
                         if len(Gk) <= k:
                             continue
                         k_components[k].append(set(Gk))
     return k_components
 
 
-def cliques_heuristic(SG, H, h_nodes, k, min_density):
-    HS = H.subgraph(h_nodes)
-    h_cnum = nx.core_number(HS)
-    for i, c_value in enumerate(sorted(set(h_cnum.values()),reverse=True)):
-        cands = set(n for n, cnum in h_cnum.items() if cnum == c_value)
+def cliques_heuristic(G, H, k, min_density):
+    h_cnumber = nx.core_number(H)
+    for i, c_value in enumerate(sorted(set(h_cnumber.values()), reverse=True)):
+        cands = set(n for n, c in h_cnumber.items() if c == c_value)
         # Skip checking for overlap for the highest core value
         if i == 0:
             overlap = False
         else:
             overlap = set.intersection(*[
-                        set(x for x in HS[n] if x not in cands)
+                        set(x for x in H[n] if x not in cands)
                         for n in cands])
         if overlap and len(overlap) < k:
-            Hc = HS.subgraph(cands | overlap)
+            SH = H.subgraph(cands | overlap)
         else:
-            Hc = HS.subgraph(cands)
-        hc_core = nx.core_number(Hc)
-        Gc = nx.k_core(SG.subgraph(Hc), k)
-        while not (_same(hc_core) and nx.density(Hc) >= min_density):
-            Hc = HS.subgraph(Gc)
-            if len(Hc) < k:
+            SH = H.subgraph(cands)
+        sh_cnumber = nx.core_number(SH)
+        SG = nx.k_core(G.subgraph(SH), k)
+        while not (_same(sh_cnumber) and nx.density(SH) >= min_density):
+            SH = H.subgraph(SG)
+            if len(SH) <= k:
                 break
-            hc_core = nx.core_number(Hc)
-            hc_deg = Hc.degree()
-            min_deg = min(hc_deg.values())
-            remove = [n for n, d in hc_deg.items() if d == min_deg]
-            Hc.remove_nodes_from(remove)
-            Gc = nx.k_core(SG.subgraph(Hc), k)
+            sh_cnumber = nx.core_number(SH)
+            sh_deg = SH.degree()
+            min_deg = min(sh_deg.values())
+            SH.remove_nodes_from(n for n, d in sh_deg.items() if d == min_deg)
+            SG = nx.k_core(G.subgraph(SH), k)
         else:
-            yield Gc
+            yield SG
 
 
 def build_k_number_dict(k_components):
