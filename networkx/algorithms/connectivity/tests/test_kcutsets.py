@@ -1,6 +1,6 @@
 # Jordi Torrents
-# Test for approximation to k-components
-from nose.tools import assert_equal, assert_false
+# Test for k-cutsets
+from nose.tools import assert_equal, assert_false, assert_true
 import networkx as nx
 
 ##
@@ -144,3 +144,27 @@ def test_karate():
     G = nx.karate_club_graph()
     _check_separating_sets(G)
 
+def _generate_no_biconnected(max_attempts=50):
+    attempts = 0
+    while True:
+        G = nx.fast_gnp_random_graph(100,0.0575)
+        if nx.is_connected(G) and not nx.is_biconnected(G):
+            attempts = 0
+            yield G
+        else:
+            if attempts >= max_attempts:
+                msg = "Tried %d times: no suitable Graph."%attempts
+                raise Exception(msg % max_attempts)
+            else:
+                attempts += 1
+
+def test_articulation_points():
+    Ggen = _generate_no_biconnected()
+    for i in range(3):
+        G = next(Ggen)
+        cuts = nx.k_cutsets(G)
+        articulation_points = set(frozenset([a]) for a in nx.articulation_points(G))
+        assert_equal(len(cuts), len(articulation_points))
+        #for cut in cuts:
+        #    assert_true(len(cut) == 1)
+        #    assert_true(cut in articulation_points)

@@ -139,45 +139,21 @@ def k_cutsets(F, k=None):
                             G.add_edge(x, v)
     return all_cuts
 
-def antichains(F):
-    # Based on SAGE combinat.posets.hasse_diagram.py
-    def _helper(A, node, T, antichains):
-        Ap = A + [node]
-        antichains.append(Ap)
-        if T:
-            _helper(A, T[0], T[1:], antichains)
-            Tp = []
-            for t in T:
-                if not t in G[node] and not node in G[t]:
-                    Tp.append(t)
-            if Tp:
-                _helper(Ap, Tp[0], Tp[1:], antichains)
-        else:
-            return antichains
-    G = F.copy()
-    # add edges from every node to each of its successors
-    for node in G:
-        for successor in nx.dfs_tree(G, node):
-            G.add_edge(node, successor)
-    #print nx.to_numpy_matrix(G)
-    # initial antichains
-    antichains = [[]]
-    # initial starting point
-    node = next(G.nodes_iter())
-    # Other nodes in G
-    T = list(set(G)-set([node]))
-    _helper([], node, T, antichains)
-    return antichains
 
-def new_antichains(F):
-    G = F.copy()
-    # add edges from every node to each of its successors
-    seen = set()
-    for node in G:
-        for successor in nx.bfs_tree(F, node):
-            G.add_edge(node, successor)
-    #print nx.to_numpy_matrix(G)
-    antichains_queues = [([], list(reversed(G.nodes())))]
+def transitive_closure(G):
+    """Based on http://www.ics.uci.edu/~eppstein/PADS/PartialOrder.py"""
+    TC = G.copy()
+    for v in G:
+        TC.add_edges_from((v, u) for u in nx.dfs_preorder_nodes(G, source=v)
+                          if v != u)
+    return TC
+
+   
+def antichains(G):
+    # Based on SAGE combinat.posets.hasse_diagram.py
+    TC = transitive_closure(G)
+    #print nx.to_numpy_matrix(TC)
+    antichains_queues = [([], nx.topological_sort(G, reverse=True))]
     while antichains_queues:
         (antichain, queue) = antichains_queues.pop()
         # Invariant:
@@ -187,8 +163,9 @@ def new_antichains(F):
         while queue:
             x = queue.pop()
             new_antichain = antichain + [x]
-            new_queue = [t for t in queue if not ((t in G[x]) or (x in G[t]))]
+            new_queue = [t for t in queue if not ((t in TC[x]) or (x in TC[t]))]
             antichains_queues.append((new_antichain, new_queue))
+
 
 def my_condensation(G, scc, mapping=False):
     """Returns the condensation of G.
