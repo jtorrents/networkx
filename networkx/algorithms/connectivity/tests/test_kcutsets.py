@@ -165,6 +165,18 @@ def test_articulation_points():
         cuts = nx.k_cutsets(G)
         articulation_points = set(frozenset([a]) for a in nx.articulation_points(G))
         assert_equal(len(cuts), len(articulation_points))
-        #for cut in cuts:
-        #    assert_true(len(cut) == 1)
-        #    assert_true(cut in articulation_points)
+        for cut in cuts:
+            assert_true(len(cut) == 1)
+            assert_true(cut in articulation_points)
+
+def test_grid_2d_graph():
+    # All minimum node cuts of a 2d grid
+    # are the four pairs of nodes that are
+    # neighbors of the four corner nodes.
+    G = nx.grid_2d_graph(5, 5)
+    solution = set([
+        frozenset([(0, 1), (1, 0)]),
+        frozenset([(3, 0), (4, 1)]),
+        frozenset([(3, 4), (4, 3)]),
+        frozenset([(0, 3), (1, 4)])])
+    assert_equal(solution, nx.k_cutsets(G))

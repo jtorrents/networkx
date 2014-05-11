@@ -75,8 +75,8 @@ def k_cutsets(F, k=None):
     # Some initial checks to save time when k = 0, 1 or n-1 
     if F.order() == 0 or not nx.is_connected(F):
         return set()
-    elif not nx.is_biconnected(F):
-        return set(frozenset([a]) for a in nx.articulation_points(F))
+    #elif not nx.is_biconnected(F):
+    #    return set(frozenset([a]) for a in nx.articulation_points(F))
     elif nx.density(F) == 1:
         node = next(F.nodes_iter())
         return set(frozenset(set(F)-set([node])))
@@ -120,14 +120,29 @@ def k_cutsets(F, k=None):
                 L, cmap = my_condensation(H, scc, mapping=True)
                 # step 7: Compute antichains of L; they map to closed sets in H
                 # Any edge in H that links a closed set is part of a cutset
-                for antichain in antichains(L):
+                antichains = compute_antichains(L)
+                i = 0
+                while i < k:
+                    antichain = next(antichains, None)
+                    if antichain is None:
+                        break
                     for node in antichain:
                         this_cut = []
                         # For all nodes of each closed set of the residual graph
-                        S = set(n for n, scc in cmap.items() if scc==node)
+                        S = set(n for n, scc in cmap.items() if scc == node)
+                        no_S = set(H) - set(S)
+                        # XXX This is nicer and faster but reports wrong results
+                        # for karate test and others. Not sure why.
+                        #cutset = set()
+                        #for u, nbrs in ((n, H[n]) for n in S):
+                        #    cutset.update((u, w) for w in nbrs if w in no_S)
+                        #for u, w in cutset:
+                        #    # has to be internal edge in the ET-reduction
+                        #    if R.node[w]['id'] == R.node[u]['id']:
+                        #        this_cut.append(R.node[w]['id'])
                         for u in S:
                             # Check if they have neighbors among other nodes in H
-                            for w in set(H) - set(S):
+                            for w in no_S:
                                 if w in H[u] or u in H[w]:
                                     # has to be internal edge in the ET-reduction
                                     if R.node[w]['id'] == R.node[u]['id']:
@@ -137,6 +152,7 @@ def k_cutsets(F, k=None):
                             # Add an edge to make sure that 
                             # we do not find this cutset again
                             G.add_edge(x, v)
+                            i += 1
     return all_cuts
 
 
@@ -149,7 +165,7 @@ def transitive_closure(G):
     return TC
 
    
-def antichains(G):
+def compute_antichains(G):
     # Based on SAGE combinat.posets.hasse_diagram.py
     TC = transitive_closure(G)
     #print nx.to_numpy_matrix(TC)
