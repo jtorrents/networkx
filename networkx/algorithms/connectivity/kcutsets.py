@@ -6,12 +6,13 @@ from operator import itemgetter
 from copy import deepcopy
 import networkx as nx
 from .utils import build_auxiliary_node_connectivity
+from networkx.algorithms.flow.utils import build_residual_network
 
 __author__ = '\n'.join(['Jordi Torrents <jtorrents@milnou.net>'])
 
 __all__ = ['k_cutsets']
 
-def k_cutsets(F, k=None):
+def k_cutsets(G, k=None, flow_func=None):
     r"""Returns all minimum k cutsets of an undirected graph G. 
 
     This implementation is based on Kanevsky's algorithm [1] for finding all
@@ -73,24 +74,32 @@ def k_cutsets(F, k=None):
 
     """
     # Some initial checks to save time when k = 0, 1 or n-1 
-    if F.order() == 0 or not nx.is_connected(F):
+    if G.order() == 0 or not nx.is_connected(G):
         return set()
-    #elif not nx.is_biconnected(F):
-    #    return set(frozenset([a]) for a in nx.articulation_points(F))
-    elif nx.density(F) == 1:
-        node = next(F.nodes_iter())
-        return set(frozenset(set(F)-set([node])))
+    #elif not nx.is_biconnected(G):
+    #    return set(frozenset([a]) for a in nx.articulation_points(G))
+    elif nx.density(G) == 1:
+        node = next(G.nodes_iter())
+        return set(frozenset(set(G)-set([node])))
+    # Initialize data structures.
+    directed = G.is_directed()
+    # Even-Tarjan reduction is what we call auxiliary digraph 
+    # for node connectivity.
+    H = build_auxiliary_node_connectivity(G)
+    mapping = H.graph['mapping']
+    R = build_residual_network(H, 'capacity')
+    # Define default flow function
+    if flow_func is None:
+        flow_func = nx.edmonds_karp
     # Begin the actual algorithm
-    # We have to modify the input graph, so we make a copy
-    G = F.copy()
     all_cuts = set()
     # step 1: Find node connectivity k of G
     if k is None:
         k = nx.node_connectivity(G)
     # step 2: 
     # Find k nodes with top degree, call it X:
-    X = frozenset(n for n,deg in \
-                sorted(G.degree().items(), key=itemgetter(1), reverse=True)[:k])
+    X = frozenset(n for n, deg in
+            sorted(G.degree().items(), key=itemgetter(1), reverse=True)[:k])
     # Check if their are a k-cutset
     if is_separating_set(G, X):
         all_cuts.add(X)
@@ -98,28 +107,24 @@ def k_cutsets(F, k=None):
     for x in X:
         # step 3: Compute local connectivity flow of x with all other
         # non adjacent nodes in G
-        for v in set(G) - set(X):
-            if v in G[x]: continue
-            # Even-Tarjan reduction
-            R = build_auxiliary_node_connectivity(G)
-            mapping = R.graph['mapping']
-            # step 4: compute maximum flow in an Even-Tarjan reduction R of G
-            # and step:5 the associated residual network H
-            #flow, H = nx.ford_fulkerson(R, '%sB'%mapping[x], '%sA'%mapping[v],
-            #                                capacity="capacity", residual=True)
-            H = nx.edmonds_karp(R, '%sB'%mapping[x], '%sA'%mapping[v], 
-                                capacity="capacity")
-            H.remove_edges_from([(u, v) for u, v, d in H.edges(data=True)
-                                if d['capacity'] == d['flow']])
-            flow = H.graph['flow_value']
+        for v in (n for n in set(G) - set(X) if n not in G[x]):
+            # step 4: compute maximum flow in an Even-Tarjan reduction H of G
+            # and step:5 build the associated residual network R
+            R = flow_func(H, '%sB' % mapping[x], '%sA' % mapping[v],
+                          capacity="capacity", residual=R)
+            flow_value = R.graph['flow_value']
 
-            if flow == k:
+            if flow_value == k:
+                ## Remove saturated edges form the residual network
+                saturated_edges = [(u, w, d) for u, w, d in R.edges(data=True)
+                                   if d['capacity'] == d['flow']]
+                R.remove_edges_from(saturated_edges)
                 # step 6: shrink the strongly connected components of 
-                # residual flow network H and call it L
-                scc=nx.strongly_connected_components(H)
-                L, cmap = my_condensation(H, scc, mapping=True)
-                # step 7: Compute antichains of L; they map to closed sets in H
-                # Any edge in H that links a closed set is part of a cutset
+                # residual flow network R and call it L
+                scc=nx.strongly_connected_components(R)
+                L, cmap = my_condensation(R, scc, mapping=True)
+                # step 7: Compute antichains of L; they map to closed sets in R
+                # Any edge in R that links a closed set is part of a cutset
                 antichains = compute_antichains(L)
                 i = 0
                 while i < k:
@@ -131,28 +136,42 @@ def k_cutsets(F, k=None):
                         # For all nodes of each closed set of the residual graph
                         S = set(n for n, scc in cmap.items() if scc == node)
                         no_S = set(H) - set(S)
+                        # Check if they have neighbors among other nodes in R
                         # XXX This is nicer and faster but reports wrong results
                         # for karate test and others. Not sure why.
                         #cutset = set()
-                        #for u, nbrs in ((n, H[n]) for n in S):
+                        #for u, nbrs in ((n, R[n]) for n in S):
                         #    cutset.update((u, w) for w in nbrs if w in no_S)
                         #for u, w in cutset:
                         #    # has to be internal edge in the ET-reduction
-                        #    if R.node[w]['id'] == R.node[u]['id']:
-                        #        this_cut.append(R.node[w]['id'])
+                        #    if H.node[w]['id'] == H.node[u]['id']:
+                        #        this_cut.append(H.node[w]['id'])
                         for u in S:
-                            # Check if they have neighbors among other nodes in H
                             for w in no_S:
-                                if w in H[u] or u in H[w]:
+                                if w in R[u] or u in R[w]:
                                     # has to be internal edge in the ET-reduction
-                                    if R.node[w]['id'] == R.node[u]['id']:
-                                        this_cut.append(R.node[w]['id'])
+                                    if H.node[w]['id'] == H.node[u]['id']:
+                                        this_cut.append(H.node[w]['id'])
+
                         if len(this_cut) == k:
                             all_cuts.add(frozenset(this_cut))
-                            # Add an edge to make sure that 
-                            # we do not find this cutset again
-                            G.add_edge(x, v)
+                            # Add an edge (x, v) to make sure that we do not
+                            # find this cutset again. This is equivalent
+                            # of adding the edge in the input graph 
+                            # G.add_edge(x, v) and then regenerate H and R.
+                            H.add_edge('%sB' % mapping[x], '%sA' % mapping[v],
+                                       capacity=1)
+                            if not directed:
+                                H.add_edge('%sB' % mapping[v], '%sA' % mapping[x],
+                                           capacity=1)
+                            # Add edge to the residual network.
+                            R.add_edge('%sB' % mapping[x], '%sA' % mapping[v],
+                                       capacity=1)
+                            R.add_edge('%sA' % mapping[v], '%sB' % mapping[x],
+                                       capacity=1)
                             i += 1
+                # Add again the saturated edges to reuse the residual network
+                R.add_edges_from(saturated_edges)
     return all_cuts
 
 
