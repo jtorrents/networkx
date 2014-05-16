@@ -126,8 +126,8 @@ def k_cutsets(G, k=None, flow_func=None):
                 # step 7: Compute antichains of L; they map to closed sets in R
                 # Any edge in R that links a closed set is part of a cutset
                 antichains = compute_antichains(L)
-                i = 0
-                while i < k:
+                found = False
+                while not found:
                     antichain = next(antichains, None)
                     if antichain is None:
                         break
@@ -169,7 +169,7 @@ def k_cutsets(G, k=None, flow_func=None):
                                        capacity=1)
                             R.add_edge('%sA' % mapping[v], '%sB' % mapping[x],
                                        capacity=1)
-                            i += 1
+                            found = True
                 # Add again the saturated edges to reuse the residual network
                 R.add_edges_from(saturated_edges)
     return all_cuts
