@@ -177,7 +177,9 @@ def k_cutsets(G, k=None, flow_func=None):
 
 def transitive_closure(G):
     """Based on http://www.ics.uci.edu/~eppstein/PADS/PartialOrder.py"""
-    TC = G.copy()
+    TC = nx.DiGraph()
+    TC.add_nodes_from(G.nodes_iter())
+    TC.add_edges_from(G.edges_iter())
     for v in G:
         TC.add_edges_from((v, u) for u in nx.dfs_preorder_nodes(G, source=v)
                           if v != u)
