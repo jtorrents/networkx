@@ -173,7 +173,7 @@ def reconstruct_k_components(k_comps):
     return result
 
 
-def cohesive_blocks(k_components):
+def cohesive_blocks(k_components, min_size=5):
     r"""Returns a tree T representing the k-component structure for a graph G. 
 
     As proposed by White et al. [1], we can represent the `k`-component 
@@ -228,25 +228,39 @@ def cohesive_blocks(k_components):
     # The root node of connectivity tree contains all nodes in G. 
     # If it is connected, the first level is k=1, if not k=0
     if len(k_components[1]) > 1:
-        T.add_node('0', k=0, order=sum([len(cc) for avg,cc in k_components[1]]))
-        for i, (avg,component) in enumerate(k_components[1]):
-            if len(component) < 5: continue
+        T.add_node('0', k=0, order=len(nodes_at_k(k_components, 1)))
+        for i, element in enumerate(k_components[1]):
+            if isinstance(element, tuple):
+                component = element[1]
+            else:
+                component = element
+            if len(component) < min_size:
+                continue
             node = '1_%s' % i
             T.add_node(node, k=1, order=len(component))
             T.add_edge('0', node, weight=len(component))
     else:
-        T.add_node('1_0', k=1, order=len(k_components[1][0]))
+        T.add_node('1_0', k=1, order=len(nodes_at_k(k_components, 1)))
 
     for k, components in k_components.items():
-        if k == 1: continue
-        for i, (avg,component) in enumerate(components):
-            component = set(component)
-            if len(component) < 5: continue
+        if k == 1:
+            continue
+        for i, element in enumerate(components):
+            if isinstance(element, tuple):
+                component = element[1]
+            else:
+                component = element
+            if len(component) < min_size:
+                continue
             node = '%s_%s' % (k, i)
             T.add_node(node, k=k, order=len(component))
             max_overlap = 0
             pred = None
-            for j, (avg,predecessors) in enumerate(k_components[k-1]):
+            for j, element in enumerate(k_components[k-1]):
+                if isinstance(element, tuple):
+                    predecessors = element[1]
+                else:
+                    predecessors = element
                 intersection = len(component & set(predecessors))
                 if intersection >= max_overlap:
                     max_overlap = intersection
@@ -255,6 +269,12 @@ def cohesive_blocks(k_components):
                 if pred in T:
                     T.add_edge(pred, node, weight=len(component))
     return T
+
+
+def nodes_at_k(k_components, k):
+    return set.union(*[(cc[1] if isinstance(cc, tuple) else cc)
+                       for cc in k_components[k]])
+
 
 def _is_trivial(G):
     if G.order() <= 2:
