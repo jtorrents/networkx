@@ -3,10 +3,15 @@
 Kanevsky all minimum k cutsets
 """
 from operator import itemgetter
-from copy import deepcopy
+
 import networkx as nx
 from .utils import build_auxiliary_node_connectivity
+# Define the default maximum flow function.
+from networkx.algorithms.flow import edmonds_karp
+from networkx.algorithms.flow import shortest_augmenting_path
 from networkx.algorithms.flow.utils import build_residual_network
+default_flow_func = edmonds_karp
+
 
 __author__ = '\n'.join(['Jordi Torrents <jtorrents@milnou.net>'])
 
@@ -30,20 +35,21 @@ def k_cutsets(G, k=None, flow_func=None):
 
     Returns
     -------
-    cuts : set of frozensets
+    cuts : a generator of frozensets
         A set of node cutsets as frozensets. Each cutset has cardinality 
         equal to the node connectivity of the input graph.
 
     Examples
     --------
     >>> # A two-dimensional grid graph has 4 cutsets of cardinality 2
-    >>> # Notice that nodes in a grid_2d_graph are tuples
     >>> G = nx.grid_2d_graph(5, 5)
+    >>> cutsets = set(nx.k_cutsets(G))
+    >>> len(cutsets)
+    4
+    >>> all(2 == len(cutset) for cutset in cutsets)
+    True
     >>> nx.node_connectivity(G)
     2
-    >>> # XXX If the output of nx.k_cutsets is formated nicly, the doctest fails!
-    >>> nx.k_cutsets(G)
-    set([frozenset([(0, 1), (1, 0)]), frozenset([(3, 0), (4, 1)]), frozenset([(3, 4), (4, 3)]), frozenset([(0, 3), (1, 4)])])
 
     Notes
     -----
@@ -73,45 +79,38 @@ def k_cutsets(G, k=None, flow_func=None):
             http://onlinelibrary.wiley.com/doi/10.1002/net.3230230604/abstract
 
     """
-    # Some initial checks to save time when k = 0, 1 or n-1 
-    if G.order() == 0 or not nx.is_connected(G):
-        return set()
-    #elif not nx.is_biconnected(G):
-    #    return set(frozenset([a]) for a in nx.articulation_points(G))
-    elif nx.density(G) == 1:
-        node = next(G.nodes_iter())
-        return set(frozenset(set(G)-set([node])))
     # Initialize data structures.
-    directed = G.is_directed()
     # Even-Tarjan reduction is what we call auxiliary digraph 
     # for node connectivity.
     H = build_auxiliary_node_connectivity(G)
     mapping = H.graph['mapping']
     R = build_residual_network(H, 'capacity')
+    kwargs = dict(capacity='capacity', residual=R)
     # Define default flow function
     if flow_func is None:
-        flow_func = nx.edmonds_karp
+        flow_func = default_flow_func
+    if flow_func is shortest_augmenting_path:
+        kwargs['two_phase'] = True
     # Begin the actual algorithm
-    all_cuts = set()
     # step 1: Find node connectivity k of G
     if k is None:
-        k = nx.node_connectivity(G)
+        k = nx.node_connectivity(G, flow_func=flow_func)
     # step 2: 
     # Find k nodes with top degree, call it X:
     X = frozenset(n for n, deg in
             sorted(G.degree().items(), key=itemgetter(1), reverse=True)[:k])
-    # Check if their are a k-cutset
+    # Check if X is a k-node-cutset
     if is_separating_set(G, X):
-        all_cuts.add(X)
-    # For all x in X
+        yield X
+
     for x in X:
         # step 3: Compute local connectivity flow of x with all other
         # non adjacent nodes in G
-        for v in (n for n in set(G) - set(X) if n not in G[x]):
+        non_adjacent = (n for n in set(G) - X if n not in G[x])
+        for v in non_adjacent:
             # step 4: compute maximum flow in an Even-Tarjan reduction H of G
             # and step:5 build the associated residual network R
-            R = flow_func(H, '%sB' % mapping[x], '%sA' % mapping[v],
-                          capacity="capacity", residual=R)
+            R = flow_func(H, '%sB' % mapping[x], '%sA' % mapping[v], **kwargs)
             flow_value = R.graph['flow_value']
 
             if flow_value == k:
@@ -123,56 +122,46 @@ def k_cutsets(G, k=None, flow_func=None):
                 # residual flow network R and call it L
                 scc=nx.strongly_connected_components(R)
                 L, cmap = my_condensation(R, scc, mapping=True)
-                # step 7: Compute antichains of L; they map to closed sets in R
-                # Any edge in R that links a closed set is part of a cutset
-                antichains = compute_antichains(L)
+                # step 7: Compute antichains of L; they map to closed sets in H
+                # Any edge in H that links a closed set is part of a cutset
+                antichains = antichain_generator(L)
+
                 found = False
                 while not found:
                     antichain = next(antichains, None)
                     if antichain is None:
                         break
-                    for node in antichain:
-                        this_cut = []
-                        # For all nodes of each closed set of the residual graph
-                        S = set(n for n, scc in cmap.items() if scc == node)
-                        no_S = set(H) - set(S)
-                        # Check if they have neighbors among other nodes in R
-                        # XXX This is nicer and faster but reports wrong results
-                        # for karate test and others. Not sure why.
-                        #cutset = set()
-                        #for u, nbrs in ((n, R[n]) for n in S):
-                        #    cutset.update((u, w) for w in nbrs if w in no_S)
-                        #for u, w in cutset:
-                        #    # has to be internal edge in the ET-reduction
-                        #    if H.node[w]['id'] == H.node[u]['id']:
-                        #        this_cut.append(H.node[w]['id'])
-                        for u in S:
-                            for w in no_S:
-                                if w in R[u] or u in R[w]:
-                                    # has to be internal edge in the ET-reduction
-                                    if H.node[w]['id'] == H.node[u]['id']:
-                                        this_cut.append(H.node[w]['id'])
+                    # Nodes in an antichain of the condensation graph of
+                    # the residual network map to a closed set of nodes that
+                    # define a node partition of the auxiliary digraph H.
+                    S = set(n for n, scc_id in cmap.items() if scc_id in antichain)
+                    # Find the cutset that links the node partition (S,~S) in H
+                    cutset = set()
+                    for u, nbrs in ((n, H[n]) for n in S):
+                        cutset.update((u, w) for w in nbrs if w not in S)
+                    # The edges in H that form the cutset are internal edges
+                    # (ie edges that represent a node of the original graph G)
+                    node_cut = set(H.node[n]['id'] for edge in cutset for n in edge)
 
-                        if len(this_cut) == k:
-                            all_cuts.add(frozenset(this_cut))
-                            # Add an edge (x, v) to make sure that we do not
-                            # find this cutset again. This is equivalent
-                            # of adding the edge in the input graph 
-                            # G.add_edge(x, v) and then regenerate H and R.
-                            H.add_edge('%sB' % mapping[x], '%sA' % mapping[v],
-                                       capacity=1)
-                            if not directed:
-                                H.add_edge('%sB' % mapping[v], '%sA' % mapping[x],
-                                           capacity=1)
-                            # Add edge to the residual network.
-                            R.add_edge('%sB' % mapping[x], '%sA' % mapping[v],
-                                       capacity=1)
-                            R.add_edge('%sA' % mapping[v], '%sB' % mapping[x],
-                                       capacity=1)
-                            found = True
+                    if len(node_cut) == k:
+                        yield frozenset(node_cut)
+                        # Add an edge (x, v) to make sure that we do not
+                        # find this cutset again. This is equivalent
+                        # of adding the edge in the input graph 
+                        # G.add_edge(x, v) and then regenerate H and R:
+                        # Add edges to the auxiliary digraph.
+                        H.add_edge('%sB' % mapping[x], '%sA' % mapping[v],
+                                   capacity=1)
+                        H.add_edge('%sB' % mapping[v], '%sA' % mapping[x],
+                                   capacity=1)
+                        # Add edges to the residual network.
+                        R.add_edge('%sB' % mapping[x], '%sA' % mapping[v],
+                                   capacity=1)
+                        R.add_edge('%sA' % mapping[v], '%sB' % mapping[x],
+                                   capacity=1)
+                        found = True
                 # Add again the saturated edges to reuse the residual network
                 R.add_edges_from(saturated_edges)
-    return all_cuts
 
 
 def transitive_closure(G):
@@ -186,7 +175,7 @@ def transitive_closure(G):
     return TC
 
    
-def compute_antichains(G):
+def antichain_generator(G):
     # Based on SAGE combinat.posets.hasse_diagram.py
     TC = transitive_closure(G)
     #print nx.to_numpy_matrix(TC)
@@ -248,6 +237,9 @@ def my_condensation(G, scc, mapping=False):
 def is_separating_set(G, cut):
     if not nx.is_connected(G):
         raise nx.NetworkXError('Input graph is disconnected')
+
+    if len(cut) == len(G) - 1:
+        return True
 
     H = G.copy()
     H.remove_nodes_from(cut)

@@ -108,10 +108,8 @@ def _check_separating_sets(G):
     for Gc in nx.connected_component_subgraphs(G):
         if len(Gc) < 3:
             continue
-        cuts = nx.k_cutsets(Gc)
+        cuts = set(nx.k_cutsets(Gc))
         for cut in cuts:
-            if isinstance(cut, int):
-                raise Exception('cut is %i'%cut)
             assert_equal(nx.node_connectivity(Gc), len(cut))
             H = Gc.copy()
             H.remove_nodes_from(cut)
@@ -162,7 +160,7 @@ def test_articulation_points():
     Ggen = _generate_no_biconnected()
     for i in range(3):
         G = next(Ggen)
-        cuts = nx.k_cutsets(G)
+        cuts = set(nx.k_cutsets(G))
         articulation_points = set(frozenset([a]) for a in nx.articulation_points(G))
         assert_equal(len(cuts), len(articulation_points))
         for cut in cuts:
@@ -179,4 +177,4 @@ def test_grid_2d_graph():
         frozenset([(3, 0), (4, 1)]),
         frozenset([(3, 4), (4, 3)]),
         frozenset([(0, 3), (1, 4)])])
-    assert_equal(solution, nx.k_cutsets(G))
+    assert_equal(solution, set(nx.k_cutsets(G)))
