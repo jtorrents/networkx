@@ -4,36 +4,37 @@ Moody and White algorithm for k-components
 """
 import collections
 from operator import itemgetter
+
 import networkx as nx
+# Define the default maximum flow function.
+from networkx.algorithms.flow import edmonds_karp
+default_flow_func = edmonds_karp
 
 __author__ = '\n'.join(['Jordi Torrents <jtorrents@milnou.net>'])
 
 __all__ = [ 'k_components',
             'cohesive_blocks']
 
-def generate_partitions(G, cuts):
+def generate_partition(G, cuts):
     def has_nbrs_in_partition(G, node, partition):
         for n in G[node]:
             if n in partition:
                 return True
         else:
             return False
-    if nx.density(G) == 1:
-        # We cannot partition a complete subgraph
-        yield nx.Graph()
-    else:
-        nodes = set(G) - set(n for cut in cuts for n in cut)
-        H = G.subgraph(nodes)
-        for cc in nx.connected_components(H):
-            component = set(cc)
-            for cut in cuts:
-                for node in cut:
-                    if has_nbrs_in_partition(G, node, cc):
-                        component.add(node)
-            if len(component) != G.order():
-                yield component
+    nodes = set(G) - set(n for cut in cuts for n in cut)
+    H = G.subgraph(nodes)
+    for cc in nx.connected_components(H):
+        component = set(cc)
+        for cut in cuts:
+            for node in cut:
+                if has_nbrs_in_partition(G, node, cc):
+                    component.add(node)
+        if len(component) < G.order():
+            yield component
 
-def k_components(G, verbose=False):
+
+def k_components(G, flow_func=None, pretty_output=True):
     r"""Returns the k-component structure of a graph G.
     
     A `k`-component is a maximal subgraph of a graph G that has, at least, 
@@ -59,22 +60,13 @@ def k_components(G, verbose=False):
         Dictionary with connectivity level `k` as key and a list of
         sets of nodes that form a k-component of level `k` as values.
         
-    k_number : dict
-        Dictionary with nodes as keys with value of the maximum k of the 
-        deepest k-component in which they are embedded.
-
     Examples
     --------
     >>> # Petersen graph has 10 nodes and it is triconnected, thus all 
     >>> # nodes are in a single component on all three connectivity levels
     >>> G = nx.petersen_graph()
-    >>> k_components, k_number = nx.k_components(G)
-    >>> for k, components in k_components.items():
-    ...     print(k, [len(component) for component in components])
-    (1, [10])
-    (2, [10])
-    (3, [10])
-    
+    >>> k_components = nx.k_components(G)
+   
     Notes
     -----
     Moody and White [1] (appendix A) provide an algorithm for identifying 
@@ -112,58 +104,74 @@ def k_components(G, verbose=False):
             http://onlinelibrary.wiley.com/doi/10.1002/net.3230230604/abstract
 
     """
-    def _update_results(k, components):
-        for component in components:
-            if len(component) > k:
-                my_comp = set(component)
-                k_components[k].append(my_comp)
-                for node in component:
-                    if k_number[node] < k:
-                        k_number[node] = k
-    ## Data structures to return results
+    ## Data structure to return results
     # Dictionary with connectivity level (k) as keys and a list of
-    # sets of nodes that form a k-component as values
+    # sets of nodes that form a k-component as values. Note that 
+    # k-compoents can overlap (but only k - 1 nodes).
     k_components = collections.defaultdict(list)
-    # Dictionary with nodes as keys and maximum k of the deepest 
-    # k-component in which they are embedded
-    k_number = dict( ((n,0) for n in G) )
+    # Define default flow function
+    if flow_func is None:
+        flow_func = default_flow_func
     # Bicomponents as a base to check for higher order k-components
-    components = nx.connected_components(G)
-    _update_results(1, components)
-    bicomponents = nx.biconnected_components(G)
-    _update_results(2, bicomponents)
-    for bicomponent in bicomponents:
-        B = G.subgraph(bicomponent)
-        k = nx.node_connectivity(B)
-        cuts = nx.k_cutsets(B, k)
-        if k == len(B)-1:
-            # complete subgraph
-            _update_results(k, [B.nodes()])
+    for component in  nx.connected_components(G):
+        # isolated nodes have connectivity 0
+        comp = set(component)
+        if len(comp) > 1:
+            k_components[1].append(comp)
+    bicomponents = list(nx.biconnected_component_subgraphs(G))
+    for bicomponent in  bicomponents:
+        # avoid considering dyads as bicomponents
+        bicomp = set(bicomponent)
+        if len(bicomp) > 2:
+            k_components[2].append(bicomp)
+    for B in bicomponents:
+        if not B or len(B) <= 2:
             continue
-        elif k > 2:
-            _update_results(k, [B.nodes()])
-        # Perform a DFS like  
-        stack = [(k, generate_partitions(B, cuts))]
+        k = nx.node_connectivity(B, flow_func=flow_func)
+        if k > 2:
+            k_components[k].append(set(B.nodes_iter()))
+        # Perform cuts in a DFS like order.
+        cuts = set(nx.k_cutsets(B, k=k, flow_func=flow_func))
+        stack = [(k, generate_partition(B, cuts))]
         while stack:
-            (parent_k, partitions) = stack[-1]
+            (parent_k, partition) = stack[-1]
             try:
-                partition = next(partitions)
-                C = nx.k_core(B.subgraph(partition), parent_k)
+                nodes = next(partition)
+                #C = nx.k_core(B.subgraph(nodes), parent_k)
+                C = B.subgraph(nodes)
                 if not _is_trivial(C):
-                    this_k = nx.node_connectivity(C)
-                    cuts = nx.k_cutsets(C, this_k)
+                    this_k = nx.node_connectivity(C, flow_func=flow_func)
                     if this_k > parent_k:
-                        _update_results(this_k, [C.nodes()])
+                        k_components[this_k].append(set(C.nodes_iter()))
+                    cuts = set(nx.k_cutsets(C, k=this_k, flow_func=flow_func))
                     if cuts:
-                        stack.append((  max(this_k, parent_k),
-                                        generate_partitions(C, cuts)))
-                    if verbose:
-                        msg = "Subgraph: {0} nodes {1} edges, K={2} with {3} cuts"
-                        print(msg.format(C.order(), C.size(), this_k, len(cuts)))
+                        stack.append((this_k, generate_partition(C, cuts)))
             except StopIteration:
                 stack.pop()
 
-    return k_components, k_number
+    if pretty_output:
+        k_components = reconstruct_k_components(k_components)
+
+    return k_components
+
+
+def reconstruct_k_components(k_comps):
+    result = dict()
+    max_k = max(k_comps)
+    for k in reversed(range(1, max_k + 1)):
+        if k == max_k:
+            result[k] = list(k_comps[k])
+        elif k not in k_comps:
+            result[k] = list(result[k+1])
+        else:
+            nodes_at_k = set.union(*k_comps[k])
+            to_add = [c for c in result[k+1] if any(n not in nodes_at_k for n in c)]
+            if to_add:
+                result[k] = list(k_comps[k]) + to_add
+            else:
+                result[k] = list(k_comps[k])
+    return result
+
 
 def cohesive_blocks(k_components):
     r"""Returns a tree T representing the k-component structure for a graph G. 
@@ -188,10 +196,8 @@ def cohesive_blocks(k_components):
     Examples
     --------
     >>> G = nx.davis_southern_women_graph()
-    >>> k_components, k_number = nx.k_components(G)
+    >>> k_components = nx.k_components(G)
     >>> T = nx.cohesive_blocks(k_components)
-    >>> # Cohesive block tree is well suited for the dot layout algorithm
-    >>> pos = nx.graphviz_layout(T, prog='dot')
     
     Notes
     -----

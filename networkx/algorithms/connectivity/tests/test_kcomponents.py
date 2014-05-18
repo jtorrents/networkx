@@ -1,6 +1,7 @@
 # Test for Moody and White k-components algorithm
 from nose.tools import assert_equal, assert_true
 import networkx as nx
+from networkx.algorithms.connectivity import build_k_number_dict
 
 ##
 ## Some nice synthetic graphs
@@ -104,7 +105,7 @@ def torrents_and_ferraro_graph():
 
 # Helper function
 def _check_connectivity(G):
-    result, k_num = nx.k_components(G)
+    result = nx.k_components(G)
     for k, components in result.items():
         if k < 3:
             continue
@@ -146,6 +147,97 @@ def test_karate_1():
                     19: 3, 20: 2, 21: 2, 22: 2, 23: 3, 24: 3, 25: 3, 26: 2, 27: 3,
                     28: 3, 29: 3, 30: 4, 31: 3, 32: 4, 33: 4}
     G = nx.karate_club_graph()
-    k_components, k_num = nx.k_components(G)
+    k_components = nx.k_components(G)
+    k_num = build_k_number_dict(k_components)
     assert_equal(karate_k_num, k_num)
+
+def test_example_1_detail_3_and_4():
+    solution = {
+        3: [set([40, 41, 42, 43, 39]),
+            set([32, 33, 34, 35, 36, 37, 38, 42, 25, 26, 27, 28, 29, 30, 31]),
+            set([58, 59, 60, 61, 62]),
+            set([44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 61]),
+            set([80, 81, 77, 78, 79]),
+            set([64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 80, 63]),
+            set([97, 98, 99, 100, 101]),
+            set([96, 100, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 94, 95])
+        ],
+        4: [set([40, 41, 42, 43, 39]),
+            set([42, 35, 36, 37, 38]),
+            set([58, 59, 60, 61, 62]),
+            set([56, 57, 61, 54, 55]),
+            set([80, 81, 77, 78, 79]),
+            set([80, 73, 74, 75, 76]),
+            set([97, 98, 99, 100, 101]),
+            set([96, 100, 92, 94, 95])
+        ],
+    }
+    G = graph_example_1()
+    result = nx.k_components(G, pretty_output=True)
+    for k, components in solution.items():
+        for component in components:
+            assert_true(component in result[k])
+
+def test_davis_southern_women():
+    solution = {
+        3: [set(['Nora Fayette',
+                'E10',
+                'Myra Liddel',
+                'E12',
+                'E14',
+                'Frances Anderson',
+                'Evelyn Jefferson',
+                'Ruth DeSand',
+                'Helen Lloyd',
+                'Eleanor Nye',
+                'E9',
+                'E8',
+                'E5',
+                'E4',
+                'E7',
+                'E6',
+                'E1',
+                'Verne Sanderson',
+                'E3',
+                'E2',
+                'Theresa Anderson',
+                'Pearl Oglethorpe',
+                'Katherina Rogers',
+                'Brenda Rogers',
+                'E13',
+                'Charlotte McDowd',
+                'Sylvia Avondale',
+                'Laura Mandeville'])
+            ],
+        4: [set(['Nora Fayette',
+                'E10',
+                'Verne Sanderson',
+                'E12',
+                'Frances Anderson',
+                'Evelyn Jefferson',
+                'Ruth DeSand',
+                'Helen Lloyd',
+                'Eleanor Nye',
+                'E9',
+                'E8',
+                'E5',
+                'E4',
+                'E7',
+                'E6',
+                'Myra Liddel',
+                'E3',
+                'Theresa Anderson',
+                'Katherina Rogers',
+                'Brenda Rogers',
+                'Charlotte McDowd',
+                'Sylvia Avondale',
+                'Laura Mandeville']),
+        ]
+    }
+    G = nx.davis_southern_women_graph()
+    result = nx.k_components(G)
+    for k, components in solution.items():
+        for component in components:
+            assert_true(component in result[k])
+
 
