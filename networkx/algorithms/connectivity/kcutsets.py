@@ -115,13 +115,13 @@ def k_cutsets(G, k=None, flow_func=None):
 
             if flow_value == k:
                 ## Remove saturated edges form the residual network
-                saturated_edges = [(u, w, d) for u, w, d in R.edges(data=True)
+                saturated_edges = [(u, w, d) for u, w, d in R.edges_iter(data=True)
                                    if d['capacity'] == d['flow']]
                 R.remove_edges_from(saturated_edges)
                 # step 6: shrink the strongly connected components of 
                 # residual flow network R and call it L
-                scc=nx.strongly_connected_components(R)
-                L, cmap = my_condensation(R, scc, mapping=True)
+                L = nx.condensation(R)
+                cmap = L.graph['mapping']
                 # step 7: Compute antichains of L; they map to closed sets in H
                 # Any edge in H that links a closed set is part of a cutset
                 antichains = antichain_generator(L)
@@ -192,47 +192,6 @@ def antichain_generator(G):
             new_queue = [t for t in queue if not ((t in TC[x]) or (x in TC[t]))]
             antichains_queues.append((new_antichain, new_queue))
 
-
-def my_condensation(G, scc, mapping=False):
-    """Returns the condensation of G.
-
-    The condensation of G is the graph with each of the strongly connected 
-    components contracted into a single node.  
-
-    Parameters
-    ----------
-    G : NetworkX DiGraph
-       A directed graph.
-
-    scc:  list
-       A list of strongly connected components.  
-       Use scc=nx.strongly_connected_components(G) to compute the components.
-
-    Returns
-    -------
-    C : NetworkX DiGraph
-       The condensation of G. The node labels are integers corresponding
-       to the index of the component in the list of strongly connected 
-       components.
-
-    Notes
-    -----
-    After contracting all strongly connected components to a single node,
-    the resulting graph is a directed acyclic graph.  
-    """
-    mapping = {}
-    C = nx.DiGraph()
-    scc = list(scc)
-    for i,component in enumerate(scc):
-        for n in component:
-            mapping[n] = i
-    C.add_nodes_from(range(len(scc)))
-    for u,v in G.edges():
-        if mapping[u] != mapping[v]:
-            C.add_edge(mapping[u],mapping[v])
-    if mapping:
-        return C, mapping
-    return C
 
 def is_separating_set(G, cut):
     if not nx.is_connected(G):
