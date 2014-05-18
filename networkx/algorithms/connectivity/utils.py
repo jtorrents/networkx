@@ -7,7 +7,8 @@ import networkx as nx
 __author__ = '\n'.join(['Jordi Torrents <jtorrents@milnou.net>'])
 
 __all__ = ['build_auxiliary_node_connectivity',
-           'build_auxiliary_edge_connectivity']
+           'build_auxiliary_edge_connectivity',
+           'build_k_number_dict']
 
 
 def build_auxiliary_node_connectivity(G):
@@ -87,3 +88,12 @@ def build_auxiliary_edge_connectivity(G):
         capacity = dict((e, 1) for e in H.edges())
         nx.set_edge_attributes(H, 'capacity', capacity)
         return H
+
+
+def build_k_number_dict(k_components):
+    k_num = {}
+    for k, comps in sorted(k_components.items()):
+        for comp in comps:
+            for node in comp:
+                k_num[node] = k
+    return k_num
