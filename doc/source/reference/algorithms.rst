@@ -34,6 +34,7 @@ Algorithms
    algorithms.isolates
    algorithms.isomorphism
    algorithms.link_analysis
+   algorithms.link_prediction
    algorithms.matching
    algorithms.mis
    algorithms.mst
@@ -45,6 +46,3 @@ Algorithms
    algorithms.traversal
    algorithms.tree
    algorithms.vitality
-
-
-
