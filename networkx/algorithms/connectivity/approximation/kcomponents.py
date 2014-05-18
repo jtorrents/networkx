@@ -77,14 +77,9 @@ def k_components_average(G, exact=False, store_nip=True, min_density=0.95):
     --------
     >>> # Petersen graph has 10 nodes and it is triconnected, thus all 
     >>> # nodes are in a single component on all three connectivity levels
-    >>> from networkx.algorithms.connectivity import approximation as approx
+    >>> from networkx.algorithms.connectivity import approximation as apxa
     >>> G = nx.petersen_graph()
-    >>> k_components, k_number = approx.k_components(G)
-    >>> for k, components in k_components.items():
-    ...     print(k, [len(component) for avg_k, component in components])
-    (1, [10])
-    (2, [10])
-    (3, [10])
+    >>> k_components = apxa.k_components_average(G)
     
     Notes
     -----
@@ -161,12 +156,12 @@ def k_components_average(G, exact=False, store_nip=True, min_density=0.95):
         # isolated nodes have connectivity 0
         comp = set(component)
         if len(comp) > 1:
-            k_components[1].append(comp)
+            k_components[1].append((1, comp))
     for bicomponent in  nx.biconnected_components(G):
         # avoid considering dyads as bicomponents
         bicomp = set(bicomponent)
         if len(bicomp) > 2:
-            k_components[2].append(bicomp)
+            k_components[2].append((2, bicomp))
     # There is no k-component of k > maximum core number
     # \kappa(G) <= \lambda(G) <= \delta(G)
     g_cnumber = core_number(G)
@@ -257,14 +252,9 @@ def k_components(G, exact=False, min_density=0.95):
     --------
     >>> # Petersen graph has 10 nodes and it is triconnected, thus all 
     >>> # nodes are in a single component on all three connectivity levels
-    >>> from networkx.algorithms.connectivity import approximation as approx
+    >>> from networkx.algorithms.connectivity import approximation as apxa
     >>> G = nx.petersen_graph()
-    >>> k_components, k_number = approx.k_components(G)
-    >>> for k, components in k_components.items():
-    ...     print(k, [len(component) for avg_k, component in components])
-    (1, [10])
-    (2, [10])
-    (3, [10])
+    >>> k_components = apxa.k_components(G)
     
     Notes
     -----
