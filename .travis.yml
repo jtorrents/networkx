@@ -98,7 +98,7 @@ before_install:
 install:
   ### Install any prerequisites or dependencies necessary to run the build.
   - if [[ "${OPTIONAL_DEPS}" == miniconda ]]; then
-      DEPS="pyyaml numpy scipy matplotlib Cython pandas pip gdal";
+      DEPS="pyyaml numpy scipy matplotlib Cython pandas pip gdal=2.1.3";
       conda create -n test-environment python=$TRAVIS_PYTHON_VERSION $DEPS ;
       source activate test-environment;
       echo "Testing that gdal installed ok by if osgeo imports";
