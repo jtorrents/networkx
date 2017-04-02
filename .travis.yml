@@ -101,7 +101,7 @@ install:
       DEPS="pyyaml numpy scipy matplotlib Cython pandas pip";
       conda create -n test-environment python=$TRAVIS_PYTHON_VERSION $DEPS ;
       source activate test-environment;
-      pip install gdal;
+      conda install gdal;
       echo "Testing that gdal installed ok by if osgeo imports";
       python -c "from osgeo import ogr;print('importing ogr worked')";
       if [[ "${TRAVIS_PYTHON_VERSION}" =~ "2.7" ]]; then
