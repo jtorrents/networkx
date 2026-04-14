@@ -1,9 +1,10 @@
-"""Tests for bipartite community quality functions."""
+"""Tests for bipartite community detection and quality functions."""
 
 import pytest
 
 import networkx as nx
 from networkx.algorithms import bipartite
+from networkx.algorithms.community.community_utils import is_partition
 from networkx.algorithms.community.quality import NotAPartition
 
 
@@ -140,3 +141,101 @@ class TestBipartiteModularity:
         # iterable and convert internally.
         communities = [{0, 2}, {1, 3}]
         assert bipartite.modularity(G, communities, [0, 1]) == pytest.approx(0.0)
+
+
+class TestCondor:
+    @classmethod
+    def setup_class(cls):
+        pytest.importorskip("numpy")
+        pytest.importorskip("scipy")
+    def test_two_disjoint_k22_components(self):
+        G = nx.Graph()
+        G.add_edges_from([(0, 2), (0, 3), (1, 2), (1, 3)])
+        G.add_edges_from([(4, 6), (4, 7), (5, 6), (5, 7)])
+        red = {0, 1, 4, 5}
+        comms = bipartite.condor_communities(G, red, seed=42)
+        assert is_partition(G, comms)
+        assert sorted(map(sorted, comms)) == [[0, 1, 2, 3], [4, 5, 6, 7]]
+        assert bipartite.modularity(G, comms, red) == pytest.approx(0.5)
+
+    def test_three_disjoint_components(self):
+        G = nx.Graph()
+        for off in (0, 5, 10):
+            for r in range(2):
+                for b in range(3):
+                    G.add_edge(off + r, off + 2 + b)
+        red = {n for n in G if n % 5 < 2}
+        comms = bipartite.condor_communities(G, red, seed=1)
+        assert is_partition(G, comms)
+        assert len(comms) == 3
+
+    def test_complete_bipartite_no_structure(self):
+        G = nx.complete_bipartite_graph(4, 4)
+        red = set(range(4))
+        comms = bipartite.condor_communities(G, red, seed=42)
+        assert is_partition(G, comms)
+        assert bipartite.modularity(G, comms, red) == pytest.approx(0.0, abs=0.01)
+
+    def test_weighted(self):
+        G = nx.Graph()
+        G.add_edge(0, 2, weight=3)
+        G.add_edge(1, 3, weight=1)
+        red = {0, 1}
+        comms = bipartite.condor_communities(G, red, seed=0)
+        assert is_partition(G, comms)
+        assert sorted(map(sorted, comms)) == [[0, 2], [1, 3]]
+
+    def test_seed_reproducibility(self):
+        G = nx.davis_southern_women_graph()
+        women = {n for n, d in G.nodes(data=True) if d["bipartite"] == 0}
+        c1 = bipartite.condor_communities(G, women, seed=123)
+        c2 = bipartite.condor_communities(G, women, seed=123)
+        assert sorted(map(sorted, c1)) == sorted(map(sorted, c2))
+
+    def test_southern_women(self):
+        G = nx.davis_southern_women_graph()
+        women = {n for n, d in G.nodes(data=True) if d["bipartite"] == 0}
+        comms = bipartite.condor_communities(G, women, seed=42)
+        assert is_partition(G, comms)
+        q = bipartite.modularity(G, comms, women)
+        # CONDOR finds 2 communities (Q~0.318) on this small network.
+        # Barber (2007) reports Q=0.346 for 4 communities using BRIM with
+        # a finer initialization. The coarser Louvain projection limits
+        # the number of initial communities on small graphs.
+        assert q == pytest.approx(0.318, abs=0.01)
+
+    def test_returns_list_of_sets_sorted_by_size(self):
+        G = nx.complete_bipartite_graph(3, 4)
+        comms = bipartite.condor_communities(G, set(range(3)), seed=7)
+        assert isinstance(comms, list)
+        assert all(isinstance(c, set) for c in comms)
+        sizes = [len(c) for c in comms]
+        assert sizes == sorted(sizes, reverse=True)
+
+    def test_directed_not_implemented(self):
+        G = nx.DiGraph([(0, 2), (1, 3)])
+        with pytest.raises(nx.NetworkXNotImplemented):
+            bipartite.condor_communities(G, {0, 1}, seed=0)
+
+    def test_empty_graph(self):
+        G = nx.Graph()
+        assert bipartite.condor_communities(G, set(), seed=0) == []
+
+    def test_random_bipartite(self):
+        G = nx.bipartite.random_graph(30, 50, 0.1, seed=42)
+        top = {n for n, d in G.nodes(data=True) if d["bipartite"] == 0}
+        comms = bipartite.condor_communities(G, top, seed=42)
+        assert is_partition(G, comms)
+        q = bipartite.modularity(G, comms, top)
+        assert q >= 0
+
+    def test_nodes_on_larger_side(self):
+        # Passing the larger bipartite set as `nodes` should give the
+        # same communities (the algorithm projects onto the smaller side).
+        G = nx.Graph()
+        G.add_edges_from([(0, 3), (0, 4), (1, 3), (1, 4), (2, 5), (2, 6)])
+        small = {0, 1, 2}
+        large = {3, 4, 5, 6}
+        c_small = bipartite.condor_communities(G, small, seed=11)
+        c_large = bipartite.condor_communities(G, large, seed=11)
+        assert sorted(map(sorted, c_small)) == sorted(map(sorted, c_large))
