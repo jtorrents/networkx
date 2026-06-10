@@ -11,6 +11,7 @@ __all__ = [
     "label_propagation_communities",
     "asyn_lpa_communities",
     "fast_label_propagation_communities",
+    "slpa_communities",
 ]
 
 
@@ -336,3 +337,183 @@ def _update_label(node, labeling, G):
         # Prec-Max
         if labeling[node] not in high_labels:
             labeling[node] = max(high_labels)
+
+
+@not_implemented_for("directed")
+@py_random_state("seed")
+@nx._dispatchable(edge_attrs="weight")
+def slpa_communities(G, *, T=100, r=0.1, weight=None, seed=None):
+    """Find overlapping communities using SLPA (Xie et al. 2011).
+
+    Speaker-Listener Label Propagation is a label-propagation method
+    that detects *overlapping* communities. Each node maintains a
+    memory of every label it has accepted; after `T` interaction
+    rounds, labels whose relative frequency in a node's memory exceeds
+    `r` define that node's community memberships. Because a node can
+    retain more than one label, the returned cover may overlap.
+
+    Parameters
+    ----------
+    G : Graph
+        An undirected NetworkX graph. Multigraphs are supported; edge
+        multiplicities are treated as additive weights.
+
+    T : int, default 100
+        Number of speaker-listener rounds. The original paper reports
+        that ``T`` in the range 20-100 is sufficient for stable
+        output. Each round visits every non-isolated node once, in a
+        freshly randomised order.
+
+    r : float, default 0.1
+        Post-processing threshold in ``[0, 1]``. A label is retained
+        in a node's memberships if its relative frequency in that
+        node's memory is at least ``r``. Above ``r = 0.5`` at most one
+        label can pass the threshold and the output is a partition. At
+        ``r = 0`` every distinct label ever accepted is retained. The
+        paper recommends values in ``[0.02, 0.1]`` for loose overlap
+        detection and in ``[0.4, 0.45]`` for tight, near-partition
+        output.
+
+    weight : string or None, default None
+        Edge attribute used for weighted SLPA. When set, the listener
+        selects the label with the largest sum of incoming edge
+        weights, and parallel edges in a multigraph add their weights.
+        When None, each edge contributes one to the listener count.
+
+    seed : integer, random_state, or None (default)
+        Indicator of random number generation state.
+        See :ref:`Randomness<randomness>`.
+
+    Returns
+    -------
+    communities : list of sets
+        A cover of ``G``. Sets may overlap, each induces a connected
+        subgraph, and none is a subset of another. Isolated nodes
+        appear as singleton communities so every node in ``G`` belongs
+        to at least one returned set.
+
+    Raises
+    ------
+    NetworkXError
+        If ``T < 1`` or ``r`` is outside ``[0, 1]``.
+    NetworkXNotImplemented
+        If ``G`` is directed.
+
+    Notes
+    -----
+    SLPA stores one integer per node per round in memory, so the
+    per-node memory grows linearly in ``T``. With the default
+    ``T = 100`` this is modest, but very large ``T`` on very large
+    graphs trades memory for stability.
+
+    The post-processing follows [1]_: labels are thresholded, nodes
+    sharing a label are split into connected groups, and nested
+    communities are removed. Label frequencies are computed over the
+    ``T + 1`` entries of a node's memory, including its unique initial
+    label. When no label in a node's memory reaches the threshold, the
+    most frequent one is kept so that the result is a cover of ``G``.
+    The weighted listener rule is an extension not covered in [1]_.
+
+    The algorithm is randomised. Set ``seed`` for reproducible output.
+
+    Examples
+    --------
+    >>> G = nx.karate_club_graph()
+    >>> communities = nx.community.slpa_communities(G, seed=42)
+    >>> all(any(n in c for c in communities) for n in G)
+    True
+
+    References
+    ----------
+    .. [1] J. Xie, B. K. Szymanski, and X. Liu, "SLPA: Uncovering
+       Overlapping Communities in Social Networks via a
+       Speaker-Listener Interaction Dynamic Process," 2011 IEEE 11th
+       International Conference on Data Mining Workshops, 2011,
+       pp. 344-349. https://doi.org/10.1109/ICDMW.2011.154
+
+    See Also
+    --------
+    asyn_lpa_communities
+    fast_label_propagation_communities
+    label_propagation_communities
+    """
+    if T < 1:
+        raise nx.NetworkXError("T must be at least 1")
+    if not 0 <= r <= 1:
+        raise nx.NetworkXError("r must be in [0, 1]")
+
+    memory = {node: [idx] for idx, node in enumerate(G)}
+    nodes = list(G)
+    adj = G._adj
+    is_multigraph = G.is_multigraph()
+
+    for _ in range(T):
+        seed.shuffle(nodes)
+        for u in nodes:
+            neighbors = adj[u]
+            if not neighbors:
+                continue
+
+            # Speaker rule: uniform sample from each neighbour's memory list
+            # (equivalent to sampling proportional to past label frequency).
+            received = {}
+            if weight is None:
+                for v in neighbors:
+                    mv = memory[v]
+                    label = mv[seed.randrange(len(mv))]
+                    received[label] = received.get(label, 0) + 1
+            else:
+                for v, edge_data in neighbors.items():
+                    if is_multigraph:
+                        w = sum(d.get(weight, 1) for d in edge_data.values())
+                    else:
+                        w = edge_data.get(weight, 1)
+                    mv = memory[v]
+                    label = mv[seed.randrange(len(mv))]
+                    received[label] = received.get(label, 0) + w
+
+            # Listener rule: argmax with random tie-breaking.
+            max_count = max(received.values())
+            winners = [label for label, c in received.items() if c == max_count]
+            memory[u].append(winners[0] if len(winners) == 1 else seed.choice(winners))
+
+    return _slpa_postprocess(G, memory, r)
+
+
+def _slpa_postprocess(G, memory, r):
+    """Threshold per-node memories and invert to a community cover."""
+    retained = {}
+    for node, mem in memory.items():
+        total = len(mem)
+        counts = Counter(mem)
+        kept = {label for label, c in counts.items() if c / total >= r}
+        if not kept:
+            kept = {counts.most_common(1)[0][0]}
+        retained[node] = kept
+
+    label_groups = defaultdict(set)
+    for node, labels in retained.items():
+        for label in labels:
+            label_groups[label].add(node)
+
+    # Nodes sharing a label need not be connected after thresholding;
+    # each connected group of same-labelled nodes forms one community.
+    candidates = [
+        component
+        for group in label_groups.values()
+        for component in nx.connected_components(G.subgraph(group))
+    ]
+
+    # Remove nested (and duplicate) communities so the cover is maximal.
+    # In decreasing size order, a candidate is nested iff the intersection
+    # of its members' kept-community sets is non-empty, avoiding pairwise
+    # subset checks.
+    candidates.sort(key=len, reverse=True)
+    communities = []
+    memberships = defaultdict(set)
+    for candidate in candidates:
+        if not set.intersection(*(memberships[node] for node in candidate)):
+            for node in candidate:
+                memberships[node].add(len(communities))
+            communities.append(candidate)
+    return communities

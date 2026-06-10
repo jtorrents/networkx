@@ -59,6 +59,7 @@ Label propagation
    asyn_lpa_communities
    label_propagation_communities
    fast_label_propagation_communities
+   slpa_communities
 
 Local Community Detection
 -------------------------
