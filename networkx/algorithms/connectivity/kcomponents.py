@@ -747,26 +747,47 @@ def _find_3_separators_hard(G, simplicial, flow_func):
     # Cap local_node_connectivity at 4: we only need to distinguish
     # "== 3" from ">= 4".
     cutoff = 4
+    # The same non-adjacent pair recurs once per common neighbor, so on
+    # hub-heavy graphs each flow result is recomputed hundreds of times;
+    # cache them across the node loop (the pair test does not depend on
+    # which common neighbor v proposed the pair).
+    pair_lnc = {}
+    deg = dict(G.degree())
     for v in G.nodes:
         if v in simplicial:
             continue
         nbrs = list(G[v])
         if len(nbrs) < 2:
             continue
+        # Local connectivity of a non-adjacent pair is at most the smaller
+        # endpoint degree, and G is 3-connected so it is at least 3: a pair
+        # with a degree-3 endpoint is a witness with no flow computation.
+        # Scanning neighbors in ascending degree order reaches such free
+        # (or cheap) witnesses first, which matters enormously for hubs --
+        # a degree-1000 hub otherwise verifies ~500k pairs at ">= 4" before
+        # concluding it is not in V_hard, but breaks at its first witness.
+        nbrs.sort(key=deg.__getitem__)
         for n_i, n_j in combinations(nbrs, 2):
             if G.has_edge(n_i, n_j):
                 continue
+            if min(deg[n_i], deg[n_j]) == 3:
+                V_hard.add(v)
+                break
             # If local connectivity between n_i and n_j is exactly 3, v is
             # in a hard 3-separator involving some triple of nodes.
-            lnc = local_node_connectivity(
-                G,
-                n_i,
-                n_j,
-                flow_func=flow_func,
-                auxiliary=aux,
-                residual=residual,
-                cutoff=cutoff,
-            )
+            pair = frozenset((n_i, n_j))
+            lnc = pair_lnc.get(pair)
+            if lnc is None:
+                lnc = local_node_connectivity(
+                    G,
+                    n_i,
+                    n_j,
+                    flow_func=flow_func,
+                    auxiliary=aux,
+                    residual=residual,
+                    cutoff=cutoff,
+                )
+                pair_lnc[pair] = lnc
             if lnc == 3:
                 V_hard.add(v)
                 break
